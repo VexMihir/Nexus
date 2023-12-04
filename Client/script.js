@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Your code goes here
 
     connectToBackendController();
+    createWebSocketServer();
 
     // Example: Change the text content of an element with the ID "example"
     var exampleElement = document.getElementById('example');
@@ -11,25 +12,25 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Example: Add a click event listener to a button with the ID "myButton"
-    var myButton = document.getElementById('myButton');
-    if (myButton) {
-        myButton.addEventListener('click', function () {
-            alert('Button clicked!');
-        });
-    }
+    // var myButton = document.getElementById('myButton');
+    // if (myButton) {
+    //     myButton.addEventListener('click', function () {
+    //         alert('Button clicked!');
+    //     });
+    // }
 
     // Add more code as needed for your project
 });
 
 function connectToBackendController() {
-    const socket = new WebSocket('ws://localhost:3000');
+    const socket = new WebSocket('ws://197.0.0.1:8000');
 
     // Connection opened
     socket.addEventListener('open', (event) => {
         console.log('Connected to server');
 
         // Send a message to the server
-        socket.send('Hello, server!');
+        socket.send({"action": "subscribe", "subscriptions":["Temperature"], "listener-address":"197.0.0.1:9000"});
     });
 
     // Listen for messages from the server
@@ -55,7 +56,7 @@ function createWebSocketServer() {
     }
 
     // Create a WebSocket server-like behavior in the frontend
-    const server = new WebSocket('ws://localhost:3000');
+    const server = new WebSocket('ws://197.0.0.1:9000');
 
     // Event handler for when a client connects
     server.addEventListener('open', (event) => {
