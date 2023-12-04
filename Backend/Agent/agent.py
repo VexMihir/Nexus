@@ -1,17 +1,12 @@
-import socket
-import threading
 import json
-import requests
-import time
 import asyncio
 import websockets
-import random
 
 class DataAgent:
     def __init__(self, host, port, backend_controller_url, is_leader=False):
         self.host = host
         self.port = port
-        self.backend_controller_url = backend_controller_url
+        self.backend_controller_url =  backend_controller_url
         self.is_leader = is_leader
         self.data_store = {}
         self.sequence_numbers = {}
@@ -21,19 +16,25 @@ class DataAgent:
     async def start(self):
             """ Start the WebSocket server and connect to the BackendController. """
             # Start the WebSocket server for incoming connections
-            server = websockets.serve(self.handle_connection, self.host, self.port)
-            asyncio.create_task(server)
+            # server = websockets.serve(self.listen_to_backend_controller, self.host, self.port)
+            # asyncio.create_task(server)
 
             # Connect to the BackendController's WebSocket server
-            asyncio.create_task(self.connect_to_backend_controller())
 
-            await asyncio.Future()
+            
+            await self.connect_to_backend_controller()
 
 
     async def connect_to_backend_controller(self):
         """ Connect to the BackendController's WebSocket server. """
-        async with websockets.connect(self.backend_controller_ws_url) as websocket:
-            await self.listen_to_backend_controller(websocket)
+        host = "127.0.0.1"
+        port = self.port
+        server = websockets.serve(self.listen_to_backend_controller, host, port)
+        print(f"Backend controller server running on ws://{host}:{port}")
+
+        asyncio.get_event_loop().run_until_complete(server)
+        asyncio.get_event_loop().run_forever()
+        
 
     async def listen_to_backend_controller(self, websocket):
         """ Listen for messages from the BackendController. """
@@ -151,11 +152,19 @@ class DataAgent:
     #         self.is_leader = False  # A new leader has been elected
 
 # Example usage
-backend_controller_url = 'http://127.0.0.1:8000'
+backend_controller_url = 'ws://http://127.0.0.1:8000'
 agent = DataAgent('localhost', 5000, backend_controller_url, is_leader=True)
 
 # Start the agent and heartbeat in async context
-async def main():
-    await agent.start()
+def main():
+    host = "127.0.0.1"
+    port = 8000
+    server = websockets.serve(agent.listen_to_backend_controller, host, port)
+    print(f"Backend controller server running on ws://{host}:{port}")
 
-asyncio.run(main())
+    asyncio.get_event_loop().run_until_complete(server)
+    asyncio.get_event_loop().run_forever()
+
+# Temporary for testing
+if __name__ == '__main__':
+     main()
