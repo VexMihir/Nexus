@@ -113,7 +113,7 @@ class DataAgent:
             print(self.data[topic][partition])
 
     async def push_data_to_subscribers(self, client_address, message):
-        print("Reached!!! Attempting to send to ", client_address)
+        print("Reached!!! Attempting to send ", message, " to ", client_address)
         try:
             async with websockets.connect("ws://" + client_address) as websocket:
                 await websocket.send(json.dumps(message))
