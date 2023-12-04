@@ -94,22 +94,28 @@ class BackendController:
 
     async def handle_subscribe(self, websocket, json_data):
         # Get subscribed topics from requests
-        subscribed_topics = json_data.get("subscriptions", [])
-        print(subscribed_topics)
         client_address_str = json_data.get("listener-address")
-        for topic in subscribed_topics:
-            if topic in self.topics:
+        subscribed_topics = json_data.get("subscriptions", [])
+
+        if subscribed_topics == "All":
+            for topic in self.topics:
                 for partition in self.topics[topic]:
                     agent = partition.agent_address
                     await self.send_data_to_agent(agent, topic, partition.partition_number, client_address_str)
+        else:
+            for topic in subscribed_topics:
+                if topic in self.topics:
+                    for partition in self.topics[topic]:
+                        agent = partition.agent_address
+                        await self.send_data_to_agent(agent, topic, partition.partition_number, client_address_str)
 
         # Send a response back to the client
         response = {"message": "Subscription successful. Agents will now send information about subscribed topics."}
         response_json = json.dumps(response)
         await websocket.send(response_json)
     async def handle_get_topics(self, websocket):
-        response = {"topics": self.topics.keys()}
-        await websocket.send(response)
+        response = {"topics": list(self.topics.keys())}
+        await websocket.send(json.dumps(response))
     async def handle_message(self, websocket):
         try:
             request_data = await websocket.recv()
@@ -120,6 +126,8 @@ class BackendController:
 
             # Get action from websocket request
             action = json_data.get("action", "Invalid")
+
+            print(action)
 
             if action == "Invalid":
                 await websocket.send("Message must include valid action: getTopics, subscribe")
