@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', function () {
     // Your code goes here
 
     connectToBackendController();
-    createWebSocketServer();
+    listenToAgent();
 
     // Example: Change the text content of an element with the ID "example"
     var exampleElement = document.getElementById('example');
@@ -29,7 +29,7 @@ function connectToBackendController() {
     socket.addEventListener('open', (event) => {
         console.log('Connected to server');
 
-        const obj = {"action": "subscribe", "subscriptions":["Temperature"], "listener-address":"127.0.0.1:9000"};
+        const obj = { "action": "subscribe", "subscriptions": ["Temperature"], "listener-address": "127.0.0.1:8080" };
         // Send a message to the server
         socket.send(JSON.stringify(obj));
     });
@@ -45,49 +45,24 @@ function connectToBackendController() {
     });
 }
 
-function createWebSocketServer() {
-    // Create an array to store connected clients
-    const clients = [];
+function listenToAgent() {
 
-    // Function to broadcast a message to all connected clients
-    function broadcast(message) {
-        clients.forEach(client => {
-            client.send(message);
-        });
-    }
-
-    // Create a WebSocket server-like behavior in the frontend
-    const server = new WebSocket('ws://127.0.0.1:9000');
-
-    // Event handler for when a client connects
-    server.addEventListener('open', (event) => {
-        console.log('Client connected');
-
-        // Add the client to the array of connected clients
-        clients.push(server);
-
-        // Send a welcome message to the client
-        server.send('Welcome to the frontend WebSocket server!');
+    const socket = new WebSocket('ws://127.0.0.1:8080');
+    
+    socket.addEventListener('open', (event) => {
+        console.log('WebSocket connection opened:', event);
     });
 
-    // Event handler for messages received from clients
-    server.addEventListener('message', (event) => {
-        const message = event.data;
-        console.log(`Received from client: ${message}`);
-
-        // Broadcast the message to all connected clients
-        broadcast(`Server received: ${message}`);
+    socket.addEventListener('message', (event) => {
+        const messagesList = document.getElementById('messages');
+        console.log(messagesList);
+        const li = document.createElement('li');
+        li.textContent = event.data;
+        messagesList.appendChild(li);
     });
 
-    // Event handler for when a client disconnects
-    server.addEventListener('close', () => {
-        console.log('Client disconnected');
-
-        // Remove the client from the array of connected clients
-        const index = clients.indexOf(server);
-        if (index !== -1) {
-            clients.splice(index, 1);
-        }
+    socket.addEventListener('close', (event) => {
+        console.log('WebSocket connection closed:', event);
     });
 }
 
