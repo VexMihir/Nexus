@@ -54,11 +54,12 @@ function listenToAgent() {
     });
 
     socket.addEventListener('message', (event) => {
-        const messagesList = document.getElementById('messages');
-        console.log(messagesList);
-        const li = document.createElement('li');
-        li.textContent = event.data;
-        messagesList.appendChild(li);
+        console.log(event.data);
+
+        // const messagesList = document.getElementById('messages');
+        // const li = document.createElement('li');
+        // li.textContent = event.data;
+        // messagesList.appendChild(li);
     });
 
     socket.addEventListener('close', (event) => {
