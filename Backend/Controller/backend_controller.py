@@ -1,36 +1,18 @@
 import asyncio
 import json
 import websockets
-import http.server
-import socketserver
+import socket
+
 
 class Partition:
     def __init__(self, topic, partition_number, agent_address):
         self.topic = topic
         self.partition_number = partition_number
-        self.agent_address = agent_address # (Leader) agent address
+        self.agent_address = agent_address  # (Leader) agent address
 
-class SubscriptionHandler(http.server.SimpleHTTPRequestHandler):
-    def do_POST(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        client_info = json.loads(post_data.decode('utf-8'))
 
-        # Handle the subscription request
-        result = BackendController.handle_subscription_request(client_info)
-
-        self.send_response(200)
-        self.send_header('Content-type', 'application/json')
-        self.end_headers()
-        self.wfile.write(json.dumps({'message': result}).encode('utf-8'))
-
-        # Optionally, you can print the client_info for debugging purposes
-        print(f"Received client_info: {client_info}")
 class BackendController:
     def __init__(self):
-        self.HOST = "localhost"
-        self.PORT = 8080
-
         # Stores list of topics and corresponding partitions
         # Topic (String) --> Partition
         self.topics = {}
@@ -83,17 +65,80 @@ class BackendController:
             return True
         return False
 
-    def run_server(self):
-        start_server = websockets.serve(self.handle_subscribe, "localhost", 8765)
+    async def send_data_to_agent(self, agent, topic, partition, client_address_str):
+        # Build the WebSocket connection URL
+        websocket_url = f"ws://{agent}"
+        print("Sending data to agent...", websocket_url)
 
-        asyncio.get_event_loop().run_until_complete(start_server)
-        asyncio.get_event_loop().run_forever()
+        try:
+            # Establish a WebSocket connection with the server
+            async with websockets.connect(websocket_url) as websocket:
+                # Define client information and subscription details
+                client_info = {'client_address': client_address_str}
+                subscription_data = {
+                    'client_info': client_info,
+                    'topic': topic,
+                    'partition_number': partition
+                }
+
+                # Send subscription request to the server
+                await websocket.send(json.dumps(subscription_data))
+                print(f"Sent subscription request to the server")
+
+                # Wait for a response from the server
+                response = await websocket.recv()
+                print(f"Received response from the server: {response}")
+
+        except Exception as e:
+            print(f"Error connecting to the server: {str(e)}")
+
+    async def handle_subscriptions(self, client_socket, client_address_str):
+        request_data = client_socket.recv(1024)
+        request_json = request_data.decode('utf-8')
+        try:
+            # Parse the JSON data
+            json_data = json.loads(request_json)
+            # Get subscribed topics from requests
+            subscribed_topics = json_data.get("subscriptions", [])
+            print(subscribed_topics)
+            for topic in subscribed_topics:
+                if topic in self.topics:
+                    for partition in self.topics[topic]:
+                        agent = partition.agent_address
+                        await self.send_data_to_agent(agent, topic, partition.partition_number, client_address_str)
+
+            # Send a response back to the client
+            response = {"message": "Subscription successful. Agents will now send information about subscribed topics."}
+            response_json = json.dumps(response)
+            client_socket.send(response_json.encode('utf-8'))
+
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON: {e}")
+        # Close the connection with the client
+        client_socket.close()
+
+    async def run_server(self):
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind(('0.0.0.0', 12345))  # Choose a port and IP address
+        server_socket.listen(5)
+
+        print("Server is listening for incoming connections...")
+
+        while True:
+            client_socket, addr = server_socket.accept()
+            client_address_str = f"{addr[0]}:{addr[1]}"
+            print(f"Accepted connection from ", client_address_str)
+            await self.handle_subscriptions(client_socket, client_address_str)
 
 
 # Temporary for testing
 if __name__ == '__main__':
     backend_controller = BackendController()
-    fake_agent = "fake_address"
+    fake_agent = "127.0.0.1:8000"
     backend_controller.add_topic("Temperature", fake_agent)
-    backend_controller.add_topic("Power Usage", fake_agent)
-    backend_controller.run_server()
+
+    # Create an event loop
+    loop = asyncio.get_event_loop()
+
+    # Run the server in the event loop
+    loop.run_until_complete(backend_controller.run_server())
