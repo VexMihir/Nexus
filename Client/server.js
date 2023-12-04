@@ -11,12 +11,12 @@ wss.on('connection', (socket) => {
 
   // Listen for messages from clients
   socket.on('message', (message) => {
-    console.log('Received message:', message);
+    console.log('Received message:', message.toString());
 
     // Broadcast the message to all connected clients
     wss.clients.forEach((client) => {
       if (client !== socket && client.readyState === WebSocket.OPEN) {
-        client.send(message);
+        client.send(message.toString());
       }
     });
   });
