@@ -12,6 +12,9 @@ async def connect_to_websocket():
     publisher_num = input("type the publisher number")
     topic = input("what topic does this publisher belong to")
 
+    title = input("what is this device's title")
+    desc = input("device description")
+
     async with websockets.connect(uri) as websocket:
         print("Connected to WebSocket")
 
@@ -21,7 +24,7 @@ async def connect_to_websocket():
             # if message.lower() == 'exit':
             #     break
 
-            message = {"PubNum": publisher_num, "Topic": topic, "Data": temperature_data}
+            message = {"PubNum": publisher_num, "Topic": topic, "Data": {"temperature": temperature_data, "title": title, "desc": desc}}
 
             await websocket.send(message)
             print(f"Sent message: {message}")
