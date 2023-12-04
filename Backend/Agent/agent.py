@@ -40,6 +40,7 @@ class DataAgent:
         """ Listen for messages from the BackendController. """
         async for message in websocket:
             data = json.loads(message)
+            print("RECEIVED DATA!!!", data)
             if 'client_info' in data:
                 await self.handle_subscription(data)
 
@@ -53,6 +54,9 @@ class DataAgent:
         if topic not in self.subscriptions:
             self.subscriptions[topic] = {}
         self.subscriptions[topic][partition] = client_address
+        print("CLIENT_ADDR: ", client_address)
+        await self.push_data_to_subscribers(client_address)
+        print("REACHED!")
 
     # def start_heartbeat(self):
     #     """ Start sending heartbeat messages if the agent is a leader. """
@@ -95,16 +99,17 @@ class DataAgent:
     #         async with websockets.connect(url) as websocket:
     #             await websocket.send(json.dumps(message))
 
-    async def push_data_to_subscribers(self, partition, message):
-            """ Push data to all subscribed clients for a given partition. """
-            topic = message['topic']
-            if topic in self.subscriptions and partition in self.subscriptions[topic]:
-                client_address = self.subscriptions[topic][partition]
-                try:
-                    async with websockets.connect(client_address) as websocket:
-                        await websocket.send(json.dumps(message))
-                except Exception as e:
-                    print(f"Error in sending data to client {client_address}: {e}")
+    async def push_data_to_subscribers(self, client_address):
+        message = "garbage"
+            #""" Push data to all subscribed clients for a given partition. """
+            #topic = message['topic']
+            #if topic in self.subscriptions and partition in self.subscriptions[topic]:
+                #client_address = self.subscriptions[topic][partition]
+        try:
+            async with websockets.connect("ws://" + client_address) as websocket:
+                await websocket.send(json.dumps(message))
+        except Exception as e:
+            print(f"Error in sending data to client {client_address}: {e}")
 
 
     # async def start_leader_election(self):
