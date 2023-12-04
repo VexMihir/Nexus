@@ -133,8 +133,7 @@ class BackendController:
             print(f"Error decoding JSON: {e}")
 
 
-# Temporary for testing
-if __name__ == '__main__':
+def main():
     backend_controller = BackendController()
     fake_agent = "127.0.0.1:8000"
     backend_controller.add_topic("Temperature", fake_agent)
@@ -146,3 +145,8 @@ if __name__ == '__main__':
 
     asyncio.get_event_loop().run_until_complete(server)
     asyncio.get_event_loop().run_forever()
+
+# Temporary for testing
+if __name__ == '__main__':
+    main()
+
