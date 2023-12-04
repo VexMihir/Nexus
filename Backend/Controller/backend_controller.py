@@ -92,43 +92,45 @@ class BackendController:
         except Exception as e:
             print(f"Error connecting to the server: {str(e)}")
 
-    async def handle_subscriptions(self, client_socket, client_address_str):
-        request_data = client_socket.recv(1024)
-        request_json = request_data.decode('utf-8')
-        try:
-            # Parse the JSON data
-            json_data = json.loads(request_json)
-            # Get subscribed topics from requests
-            subscribed_topics = json_data.get("subscriptions", [])
-            print(subscribed_topics)
-            for topic in subscribed_topics:
-                if topic in self.topics:
-                    for partition in self.topics[topic]:
-                        agent = partition.agent_address
-                        await self.send_data_to_agent(agent, topic, partition.partition_number, client_address_str)
+    async def handle_subscribe(self, websocket, json_data):
+        # Get subscribed topics from requests
+        subscribed_topics = json_data.get("subscriptions", [])
+        print(subscribed_topics)
+        client_address_str = json_data.get("listener-address")
+        for topic in subscribed_topics:
+            if topic in self.topics:
+                for partition in self.topics[topic]:
+                    agent = partition.agent_address
+                    await self.send_data_to_agent(agent, topic, partition.partition_number, client_address_str)
 
-            # Send a response back to the client
-            response = {"message": "Subscription successful. Agents will now send information about subscribed topics."}
-            response_json = json.dumps(response)
-            client_socket.send(response_json.encode('utf-8'))
+        # Send a response back to the client
+        response = {"message": "Subscription successful. Agents will now send information about subscribed topics."}
+        response_json = json.dumps(response)
+        await websocket.send(response_json)
+    async def handle_get_topics(self, websocket):
+        response = {"topics": self.topics.keys()}
+        await websocket.send(response)
+    async def handle_message(self, websocket):
+        try:
+            request_data = await websocket.recv()
+            # Parse the JSON data
+            json_data = json.loads(request_data)
+
+            print(json_data)
+
+            # Get action from websocket request
+            action = json_data.get("action", "Invalid")
+
+            if action == "Invalid":
+                await websocket.send("Message must include valid action: getTopics, subscribe")
+
+            if action == "getTopics":
+                await self.handle_get_topics(websocket)
+            if action == "subscribe":
+                await self.handle_subscribe(websocket, json_data)
 
         except json.JSONDecodeError as e:
             print(f"Error decoding JSON: {e}")
-        # Close the connection with the client
-        client_socket.close()
-
-    async def run_server(self):
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.bind(('0.0.0.0', 12345))  # Choose a port and IP address
-        server_socket.listen(5)
-
-        print("Server is listening for incoming connections...")
-
-        while True:
-            client_socket, addr = server_socket.accept()
-            client_address_str = f"{addr[0]}:{addr[1]}"
-            print(f"Accepted connection from ", client_address_str)
-            await self.handle_subscriptions(client_socket, client_address_str)
 
 
 # Temporary for testing
@@ -137,8 +139,10 @@ if __name__ == '__main__':
     fake_agent = "127.0.0.1:8000"
     backend_controller.add_topic("Temperature", fake_agent)
 
-    # Create an event loop
-    loop = asyncio.get_event_loop()
+    host = "127.0.0.1"
+    port = 12345
+    server = websockets.serve(backend_controller.handle_message, host, port)
+    print(f"Backend controller server running on ws://{host}:{port}")
 
-    # Run the server in the event loop
-    loop.run_until_complete(backend_controller.run_server())
+    asyncio.get_event_loop().run_until_complete(server)
+    asyncio.get_event_loop().run_forever()
