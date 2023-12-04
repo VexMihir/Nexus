@@ -23,14 +23,15 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 function connectToBackendController() {
-    const socket = new WebSocket('ws://197.0.0.1:8000');
+    const socket = new WebSocket('ws://127.0.0.1:12345');
 
     // Connection opened
     socket.addEventListener('open', (event) => {
         console.log('Connected to server');
 
+        const obj = {"action": "subscribe", "subscriptions":["Temperature"], "listener-address":"127.0.0.1:9000"};
         // Send a message to the server
-        socket.send({"action": "subscribe", "subscriptions":["Temperature"], "listener-address":"197.0.0.1:9000"});
+        socket.send(JSON.stringify(obj));
     });
 
     // Listen for messages from the server
@@ -56,7 +57,7 @@ function createWebSocketServer() {
     }
 
     // Create a WebSocket server-like behavior in the frontend
-    const server = new WebSocket('ws://197.0.0.1:9000');
+    const server = new WebSocket('ws://127.0.0.1:9000');
 
     // Event handler for when a client connects
     server.addEventListener('open', (event) => {
