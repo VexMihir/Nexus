@@ -1,6 +1,8 @@
 import json
 import asyncio
 import websockets
+import threading
+import time
 
 class DataAgent:
     def __init__(self, host, port, backend_controller_url, is_leader=False):
@@ -10,39 +12,37 @@ class DataAgent:
         self.is_leader = is_leader
         self.data_store = {}
         self.sequence_numbers = {}
+        # Dictionary {Topic ---> Dictionary {Partition# ---> [ClientAddys] (list) }}
         self.subscriptions = {}  # Stores client subscriptions by topic and partition
         self.followers = {}  # Format: {partition_id: [follower WebSocket URLs]}
         self.heartbeat_interval = 5  # seconds
+
+        # Dictionary: {Topic ---> Dictionary {Partition# ---> Queue (List)}}
+        self.data = {}
+
+        # Data lock. Ensures threads do not conflict when modifying self.data
+        self.datalock = threading.Lock()
+
     async def start(self):
-            """ Start the WebSocket server and connect to the BackendController. """
-            # Start the WebSocket server for incoming connections
-            # server = websockets.serve(self.listen_to_backend_controller, self.host, self.port)
-            # asyncio.create_task(server)
+        while True:
+            time.sleep(5)
+            #continue
+            for topic in self.subscriptions:
+                for partition in self.subscriptions[topic]:
+                    with self.datalock:
+                        if topic in self.data and partition in self.data[topic]:
+                            message = self.data[topic][partition].pop(0)
+                            print("Sending message ", message)
+                            for listener_client in self.subscriptions[topic][partition]:
+                                await self.push_data_to_subscribers(listener_client, message)
 
-            # Connect to the BackendController's WebSocket server
-
-            
-            await self.connect_to_backend_controller()
-
-
-    async def connect_to_backend_controller(self):
-        """ Connect to the BackendController's WebSocket server. """
-        host = "127.0.0.1"
-        port = self.port
-        server = websockets.serve(self.listen_to_backend_controller, host, port)
-        print(f"Backend controller server running on ws://{host}:{port}")
-
-        asyncio.get_event_loop().run_until_complete(server)
-        asyncio.get_event_loop().run_forever()
-        
 
     async def listen_to_backend_controller(self, websocket):
         """ Listen for messages from the BackendController. """
         async for message in websocket:
             data = json.loads(message)
-            print("RECEIVED DATA!!!", data)
-            if 'client_info' in data:
-                await self.handle_subscription(data)
+            print("Received subscription request!")
+            await self.handle_subscription(data)
 
     async def handle_subscription(self, data):
         """ Handle subscription request from BackendController. """
@@ -53,10 +53,10 @@ class DataAgent:
         # Store subscription info
         if topic not in self.subscriptions:
             self.subscriptions[topic] = {}
-        self.subscriptions[topic][partition] = client_address
-        print("CLIENT_ADDR: ", client_address)
-        await self.push_data_to_subscribers(client_address)
-        print("REACHED!")
+        if partition not in self.subscriptions[topic]:
+            self.subscriptions[topic][partition] = []
+        self.subscriptions[topic][partition].append(client_address)
+        print(f"Added {client_address} to subscriptions: subscriptions[{topic}][{partition}] = ", self.subscriptions[topic][partition])
 
     # def start_heartbeat(self):
     #     """ Start sending heartbeat messages if the agent is a leader. """
@@ -98,13 +98,22 @@ class DataAgent:
     #     for url in followers:
     #         async with websockets.connect(url) as websocket:
     #             await websocket.send(json.dumps(message))
+    async def listen_to_producer(self, websocket):
+        """ Listen for messages from the BackendController. """
+        async for message in websocket:
+            data = json.loads(message)
+            topic = data.get("Topic")
+            partition = data.pop("Partition")
+            with self.datalock:
+                if topic not in self.data:
+                    self.data[topic] = {}
+                if partition not in self.data[topic]:
+                    self.data[topic][partition] = list()
+                self.data[topic][partition].append(data)
+            print(self.data[topic][partition])
 
-    async def push_data_to_subscribers(self, client_address):
-        message = "garbage"
-            #""" Push data to all subscribed clients for a given partition. """
-            #topic = message['topic']
-            #if topic in self.subscriptions and partition in self.subscriptions[topic]:
-                #client_address = self.subscriptions[topic][partition]
+    async def push_data_to_subscribers(self, client_address, message):
+        print("Reached!!! Attempting to send to ", client_address)
         try:
             async with websockets.connect("ws://" + client_address) as websocket:
                 await websocket.send(json.dumps(message))
@@ -156,20 +165,50 @@ class DataAgent:
     #     elif message.get('type') == 'new_leader':
     #         self.is_leader = False  # A new leader has been elected
 
-# Example usage
-backend_controller_url = 'ws://http://127.0.0.1:8000'
-agent = DataAgent('localhost', 5000, backend_controller_url, is_leader=True)
-
 # Start the agent and heartbeat in async context
-def main():
+def start_backend_controller_listener(agent):
     host = "127.0.0.1"
     port = 8000
+
+    # Create a new event loop for the thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     server = websockets.serve(agent.listen_to_backend_controller, host, port)
-    print(f"Backend controller server running on ws://{host}:{port}")
+    print(f"Backend controller listener server running on ws://{host}:{port}")
 
-    asyncio.get_event_loop().run_until_complete(server)
-    asyncio.get_event_loop().run_forever()
+    loop.run_until_complete(server)
+    loop.run_forever()
 
-# Temporary for testing
+def start_producer_listener(agent):
+    host = "127.0.0.1"
+    port = 8001
+
+    # Create a new event loop for the thread
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    server = websockets.serve(agent.listen_to_producer, host, port)
+    print(f"Producer listener server running on ws://{host}:{port}")
+
+    loop.run_until_complete(server)
+    loop.run_forever()
+
+
 if __name__ == '__main__':
-     main()
+    # Example usage
+    backend_controller_url = 'ws://http://127.0.0.1:8000'
+    agent = DataAgent('localhost', 5000, backend_controller_url, is_leader=True)
+    thread1 = threading.Thread(target=start_backend_controller_listener, args=(agent,))
+    thread2 = threading.Thread(target=start_producer_listener, args=(agent,))
+    thread3 = threading.Thread(target=asyncio.run, args=(agent.start(),))
+
+    # Start the threads
+    thread1.start()
+    thread2.start()
+    thread3.start()
+
+    # Wait for both threads to finish (they won't)
+    thread1.join()
+    thread2.join()
+    thread3.join()
