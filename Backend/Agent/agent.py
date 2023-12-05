@@ -13,6 +13,8 @@ class DataAgent:
         self.is_leader = is_leader
         # Dictionary {Topic ---> Dictionary {Partition# ---> [ClientAddys] (list) }}
         self.subscriptions = {}  # Stores client subscriptions by topic and partition
+        self.followers = []  # Format: {partition_id: [follower WebSocket URLs]}
+        self.heartbeat_interval = 5  # seconds
 
         # Dictionary: {Topic ---> Dictionary {Partition# ---> Queue (List)}}
         self.data = {}
@@ -169,7 +171,7 @@ class DataAgent:
         # Create a new event loop for the thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
+        
         # Define the WebSocket server for this agent
         server = websockets.serve(self.handle_agent_messages, self.host, self.port)
         print(f"Agent listener server running on ws://{self.host}:{self.port}")
@@ -187,6 +189,43 @@ class DataAgent:
                     if data['id'] != self.agent_id:
                         self.is_leader = False
                         print(f"Agent {self.agent_id} acknowledges new leader: Agent {data['id']}")
+                        
+    # initiating heartbeat
+    #note: have to recall everytime new leader is selected
+    def start_heartbeat(self):
+        """ Start sending heartbeat messages if the agent is a leader. """
+        if self.is_leader:
+            while True:
+                self.send_heartbeat_to_followers()
+                time.sleep(self.heartbeat_interval)
+                #check heartbeat acks from followers
+
+        # not leader so listening for heartbeat instead
+        # if not self.is_leader:
+        #     while True:
+        #         # awaiting for heartbeat
+        #         message = await 
+                
+
+    # leader sending out heartbeat
+    async def send_heartbeat_to_followers(self):
+        print("Prepping to send heartbeat to followers")
+        for follower in self.followers:
+            websocket_url = "ws://" + follower.address + ":" + follower.port
+
+            try:
+                async with websockets.connect(websocket_url) as websocket:
+                    await websocket.send("Heartbeat")
+                    print("heartbeat sent!")
+
+                    #response will be id of the follower being acked
+                    response = await websocket.recv()
+                    print(f"Received ack from {response}" )
+            except:
+                # note: do logic for failed shit here.
+                # note: check for timeout in this case
+                print("bruh something went so wrong idk how to fix it")
+
 
 if __name__ == '__main__':
     # Example usage
