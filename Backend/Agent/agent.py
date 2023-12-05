@@ -27,6 +27,7 @@ class DataAgent:
         self.received_higher_priority_message = False  # Flag for election process
 
     async def start(self):
+        await self.start_heartbeat()
         while True:
             time.sleep(5)
             #continue
@@ -175,7 +176,6 @@ class DataAgent:
         # Define the WebSocket server for this agent
         server = websockets.serve(self.handle_agent_messages, self.host, self.port)
         print(f"Agent listener server running on ws://{self.host}:{self.port}")
-
         loop.run_until_complete(server)
         loop.run_forever()
     
@@ -189,43 +189,38 @@ class DataAgent:
                     if data['id'] != self.agent_id:
                         self.is_leader = False
                         print(f"Agent {self.agent_id} acknowledges new leader: Agent {data['id']}")
+                        await self.start_heartbeat()
+                elif data.get('type') == 'heartbeat':
+                    print("heartbeat received! Sending ack...")
+                    await websocket.send(json.dumps({'type': 'heartbeat', 'id': self.agent_id}))
+                    print("ack sent from follower")
                         
     # initiating heartbeat
     #note: have to recall everytime new leader is selected
-    def start_heartbeat(self):
+    async def start_heartbeat(self):
         """ Start sending heartbeat messages if the agent is a leader. """
         if self.is_leader:
             while True:
-                self.send_heartbeat_to_followers()
-                time.sleep(self.heartbeat_interval)
-                #check heartbeat acks from followers
-
-        # not leader so listening for heartbeat instead
-        # if not self.is_leader:
-        #     while True:
-        #         # awaiting for heartbeat
-        #         message = await 
-                
+                await self.send_heartbeat_to_followers()
+                time.sleep(self.heartbeat_interval)   
 
     # leader sending out heartbeat
     async def send_heartbeat_to_followers(self):
         print("Prepping to send heartbeat to followers")
         for follower in self.followers:
-            websocket_url = "ws://" + follower.address + ":" + follower.port
-
+            websocket_url = "ws://" + follower.get("address") + ":" + str(follower.get("port"))
             try:
                 async with websockets.connect(websocket_url) as websocket:
-                    await websocket.send("Heartbeat")
+                    await websocket.send(json.dumps({'type': 'heartbeat', 'id': follower.get("agent_id")}))
                     print("heartbeat sent!")
 
                     #response will be id of the follower being acked
                     response = await websocket.recv()
+                    print("ack received!")
                     print(f"Received ack from {response}" )
             except:
-                # note: do logic for failed shit here.
-                # note: check for timeout in this case
                 print("bruh something went so wrong idk how to fix it")
-
+        
 
 if __name__ == '__main__':
     # Example usage
@@ -259,8 +254,8 @@ if __name__ == '__main__':
 
     # Now start the leader election process
     print("Starting leader election...")
-    thread3 = threading.Thread(target=asyncio.run, args=(agent1.start_leader_election(),))
-    thread4 = threading.Thread(target=asyncio.run, args=(agent2.start_leader_election(),))
+    thread3 = threading.Thread(target=asyncio.run, args=(agent1.start(),))
+    thread4 = threading.Thread(target=asyncio.run, args=(agent2.start(),))
     thread3.start()
     thread4.start()
 
