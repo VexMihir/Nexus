@@ -97,19 +97,31 @@ class DataAgent:
         loop.run_forever()
 
     def start_producer_listener(agent):
-        host = "127.0.0.1"
-        port = 8001
 
         # Create a new event loop for the thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        server = websockets.serve(agent.listen_to_producer, host, port)
-        print(f"Producer listener server running on ws://{host}:{port}")
+        host = "127.0.0.1"
+        start_server = websockets.serve(agent.listen_to_producer, host, 0)
 
-        loop.run_until_complete(server)
+        # Run the server and retrieve the port number
+        server = loop.run_until_complete(start_server)
+        assigned_port = server.sockets[0].getsockname()[1]
+        print(f"Producer listener server running on ws://{host}:{assigned_port}")
+
+        loop.run_until_complete(agent.send_port_info_to_frontend(assigned_port))
+
         loop.run_forever()
 
+    async def send_port_info_to_frontend(self, port):
+            """ Send the dynamically assigned port to another WebSocket address. """
+            other_websocket_url = 'ws://127.0.0.1:1350'  # Replace with actual URL
+            try:
+                async with websockets.connect(other_websocket_url) as websocket:
+                    await websocket.send(json.dumps({'agent_id': self.agent_id, 'port': port}))
+            except Exception as e:
+                print(f"Error in sending port information: {e}")
 
     async def start_leader_election(self):
         """ Initiates a leader election process using the bully algorithm. """
@@ -180,6 +192,7 @@ if __name__ == '__main__':
     # Example usage
     backend_controller_url = 'ws://http://127.0.0.1:8000'
 
+    #for testing
     agents_info = [
     {
         'id': 1,  # Unique identifier for the first agent
