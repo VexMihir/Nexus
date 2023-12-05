@@ -12,6 +12,10 @@ class FrontendController:
         self.agents = {}
         self.publishers = defaultdict(str)
         self.topics = defaultdict(set)
+        self.topic_partitions = defaultdict(defaultdict(list))
+        # self.partitions = (defaultdict(list))
+        self.round_robin = {}
+        
         
     
     def start(self):
@@ -35,20 +39,28 @@ class FrontendController:
             message = websocket.recv()
             print(f"Received message from client: {message}")
                         
-    def load_balance(self):
+    def load_balance(self, topic):
         """ Load balance the incoming messages. """
-        message_agent = roundrobin.basic(self.agents.keys())
-        return message_agent
+        if topic in self.round_robin:
+            agent = self.round_robin[topic]()
+            return agent
+        else:
+            self.round_robin[topic] = roundrobin.basic([self.topic_partitions[topic]])
+            agent = self.round_robin[topic]()
+            return agent
     
-    async def listen_to_frontend_controller(self, websocket):
-        """ Listen for messages from the FrontendController. """
-        async for message in websocket:
-            data = json.loads(message)
-            print("Received subscription request!")
-            await self.handle_subscription(data)
+    def add_parition(self, topic, agent):
+        """ Add a partition to a topic. """
+        self.topic_partitions[topic].append(agent)
 
-    def send_agent_information(self):
-        choosen_agent = load_balance()
+        
+    
+    # async def listen_to_frontend_controller(self, websocket):
+    #     """ Listen for messages from the FrontendController. """
+    #     async for message in websocket:
+    #         data = json.loads(message)
+    #         print("Received subscription request!")
+    #         await self.handle_subscription(data)
     
     async def handle_subscription(self, data):
         """ Handle subscription request from FrontendController. """
@@ -56,16 +68,42 @@ class FrontendController:
         topic = data['Topic']
         pub_num = data['PubNum']
 
+        # get parition for topic
+        partition_num = self.topic_partitions[topic]
+
+        self.publishers[pub_num] = f'{topic}/{}'
+
+        # get parition for topic
+        partition_num = self.topic_partitions[topic]
+
         # Store subscription info
         self.topics[topic].add(pub_num)
-        self.publishers[pub_num] = topic
+        self.topic_partitions[parition_num] = topic
 
-        # Send subscription info to agents
-        await self.send_subscription_info_to_agents(topic, pub_num)
+        self.partitions[topic][pub_num] = 
+
+        # select agent to send subscription info to
+        agent = self.load_balance()
+        print(f"Sending agent info to publisher: {agent}")
+        await self.send_agent_info_to_publisher(agent, topic, pub_num)
 
         
         self.subscriptions[topic][partition].append(client_address)
         print(f"Added {client_address} to subscriptions: subscriptions[{topic}][{partition}] = ", self.subscriptions[topic][partition])
+    
+    async def send_agent_info_to_publisher(self, agent, topic, pub_num):
+        """ Send subscription info to agent. """
+        # Create subscription message
+        message = {
+            "action": "subscribe",
+            "topic": topic,
+            "pub_num": pub_num
+        }
+        message_json = json.dumps(message)
+
+        # Send subscription message to agent
+        async with websockets.connect(agent) as websocket:
+            await websocket.send(message_json)
 
     async def connect_agent(self):
         pass
