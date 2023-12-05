@@ -10,11 +10,9 @@ class DataAgent:
         self.port = port
         self.backend_controller_url =  backend_controller_url
         self.is_leader = is_leader
-        self.data_store = {}
-        self.sequence_numbers = {}
         # Dictionary {Topic ---> Dictionary {Partition# ---> [ClientAddys] (list) }}
         self.subscriptions = {}  # Stores client subscriptions by topic and partition
-        self.followers = {}  # Format: {partition_id: [follower WebSocket URLs]}
+        self.followers = []  # Format: {partition_id: [follower WebSocket URLs]}
         self.heartbeat_interval = 5  # seconds
 
         # Dictionary: {Topic ---> Dictionary {Partition# ---> Queue (List)}}
@@ -110,98 +108,48 @@ class DataAgent:
         loop.run_forever()
 
 
-    # def start_heartbeat(self):
-    #     """ Start sending heartbeat messages if the agent is a leader. """
-    #     if self.is_leader:
-    #         while True:
-    #             self.send_heartbeat_to_followers()
-    #             time.sleep(self.heartbeat_interval)
+    # initiating heartbeat
+    #note: have to recall everytime new leader is selected
+    def start_heartbeat(self):
+        """ Start sending heartbeat messages if the agent is a leader. """
+        if self.is_leader:
+            while True:
+                self.send_heartbeat_to_followers()
+                time.sleep(self.heartbeat_interval)
+                #check heartbeat acks from followers
 
-    # async def respond_to_heartbeat(self, message):
-    #     """ Respond to a heartbeat message from the leader. """
-    #     ack_message = json.dumps({'type': 'heartbeat_ack', 'timestamp': message['timestamp']})
-    #     # Send the ack_message to the leader (implementation depends on leader's WebSocket URL)
-    #     pass  # Placeholder for sending the acknowledgment to the leader
+        # not leader so listening for heartbeat instead
+        # if not self.is_leader:
+        #     while True:
+        #         # awaiting for heartbeat
+        #         message = await 
+                
 
-    # async def process_message_as_leader(self, message, websocket):
-    #     if message.get('type') == 'data':
-    #         topic = message['topic']
-    #         partition = message['partition']
-    #         sequence_number = message['sequence_number']
+    # leader sending out heartbeat
+    async def send_heartbeat_to_followers(self):
+        print("Prepping to send heartbeat to followers")
+        for follower in self.followers:
+            websocket_url = "ws://" + follower.address + ":" + follower.port
 
-    #         with self.lock:
-    #             if partition not in self.data_store:
-    #                 self.data_store[partition] = []
-    #                 self.sequence_numbers[partition] = -1
+            try:
+                async with websockets.connect(websocket_url) as websocket:
+                    await websocket.send("Heartbeat")
+                    print("heartbeat sent!")
 
-    #             if sequence_number == self.sequence_numbers[partition] + 1:
-    #                 self.data_store[partition].append(message)
-    #                 self.sequence_numbers[partition] = sequence_number
-    #                 await self.replicate_to_followers(partition, message)
-    #             else:
-    #                 print(f"Sequence number mismatch in partition {partition}.")
-    #     elif message.get('type') == 'heartbeat_ack':
-    #         # Process heartbeat acknowledgment
-    #         pass  # Placeholder for handling heartbeat acknowledgments
-
-    # async def replicate_to_followers(self, partition, message):
-    #     """ Replicate data to follower agents using WebSockets. """
-    #     followers = self.followers.get(partition, [])
-    #     for url in followers:
-    #         async with websockets.connect(url) as websocket:
-    #             await websocket.send(json.dumps(message))
-
-
-    # async def start_leader_election(self):
-    #     """
-    #     Initiates a leader election process using the bully algorithm.
-    #     """
-    #     self.is_leader = False
-    #     await self.notify_others_for_election()
-    #     await asyncio.sleep(random.uniform(0.5, 1.5))  # Random wait to avoid message collision
-    #     if not self.received_higher_priority_message:
-    #         self.is_leader = True
-    #         await self.notify_others_leader_election_result()
-
-    # async def notify_others_for_election(self):
-    #     """
-    #     Notify other agents that a leader election is taking place.
-    #     """
-    #     self.received_higher_priority_message = False
-    #     for agent in self.other_agents:  # Adjusted for WebSocket communication
-    #         try:
-    #             async with websockets.connect(f"ws://{agent['websocket_address']}:{agent['websocket_port']}") as websocket:
-    #                 await websocket.send(json.dumps({'type': 'election', 'id': self.id}))
-    #         except Exception as e:
-    #             print(f"Error in sending election message to agent {agent}: {e}")
-
-
-    # async def notify_others_leader_election_result(self):
-    #     """
-    #     Notify other agents about the election result.
-    #     """
-    #     for agent in self.other_agents:
-    #         try:
-    #             async with websockets.connect(f"ws://{agent['address']}:{agent['port']}") as websocket:
-    #                 await websocket.send(json.dumps({'type': 'new_leader', 'id': self.id}))
-    #         except Exception as e:
-    #             print(f"Error in sending new leader message to agent {agent}: {e}")
-
-    # async def handle_election_messages(self, message):
-    #     """
-    #     Handle incoming messages related to leader election.
-    #     """
-    #     if message.get('type') == 'election' and message['id'] > self.id:
-    #         self.received_higher_priority_message = True
-    #     elif message.get('type') == 'new_leader':
-    #         self.is_leader = False  # A new leader has been elected
+                    #response will be id of the follower being acked
+                    response = await websocket.recv()
+                    print(f"Received ack from {response}" )
+            except:
+                # note: do logic for failed shit here.
+                # note: check for timeout in this case
+                print("bruh something went so wrong idk how to fix it")
 
 if __name__ == '__main__':
     # Example usage
     backend_controller_url = 'ws://http://127.0.0.1:8000'
     agent = DataAgent('localhost', 5000, backend_controller_url, is_leader=True)
-    thread1 = threading.Thread(target=start_backend_controller_listener, args=(agent,))
-    thread2 = threading.Thread(target=start_producer_listener, args=(agent,))
+    thread1 = threading.Thread(target=DataAgent.start_backend_controller_listener, args=(agent,))
+    thread2 = threading.Thread(target=DataAgent.start_producer_listener, args=(agent,))
     thread3 = threading.Thread(target=asyncio.run, args=(agent.start(),))
 
     # Start the threads
