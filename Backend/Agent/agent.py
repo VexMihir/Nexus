@@ -3,9 +3,10 @@ import asyncio
 import websockets
 import threading
 import time
+import random
 
 class DataAgent:
-    def __init__(self, host, port, backend_controller_url, is_leader=False):
+    def __init__(self, host, port, backend_controller_url, agent_id, other_agents_info, is_leader=False):
         self.host = host
         self.port = port
         self.backend_controller_url =  backend_controller_url
@@ -20,6 +21,10 @@ class DataAgent:
 
         # Data lock. Ensures threads do not conflict when modifying self.data
         self.datalock = threading.Lock()
+
+        self.agent_id = agent_id  # Unique identifier for this agent
+        self.other_agents_info = other_agents_info  # Information about other agents
+        self.received_higher_priority_message = False  # Flag for election process
 
     async def start(self):
         while True:
@@ -94,20 +99,97 @@ class DataAgent:
         loop.run_forever()
 
     def start_producer_listener(agent):
-        host = "127.0.0.1"
-        port = 8001
 
         # Create a new event loop for the thread
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        server = websockets.serve(agent.listen_to_producer, host, port)
-        print(f"Producer listener server running on ws://{host}:{port}")
+        host = "127.0.0.1"
+        start_server = websockets.serve(agent.listen_to_producer, host, 0)
+
+        # Run the server and retrieve the port number
+        server = loop.run_until_complete(start_server)
+        assigned_port = server.sockets[0].getsockname()[1]
+        print(f"Producer listener server running on ws://{host}:{assigned_port}")
+
+        loop.run_until_complete(agent.send_port_info_to_frontend(assigned_port))
+
+        loop.run_forever()
+
+    async def send_port_info_to_frontend(self, port):
+            """ Send the dynamically assigned port to another WebSocket address. """
+            other_websocket_url = 'ws://127.0.0.1:1350'  # Replace with actual URL
+            try:
+                async with websockets.connect(other_websocket_url) as websocket:
+                    await websocket.send(json.dumps({'agent_id': self.agent_id, 'port': port}))
+            except Exception as e:
+                print(f"Error in sending port information: {e}")
+
+    async def start_leader_election(self):
+        """ Initiates a leader election process using the bully algorithm. """
+        print(f"Agent {self.agent_id} starting election process")
+        self.is_leader = False
+        self.received_higher_priority_message = False
+        await self.notify_others_for_election()
+        await asyncio.sleep(random.uniform(2, 4))  # Random wait to avoid message collision
+        if not self.received_higher_priority_message:
+            self.is_leader = True
+            print(f"Agent {self.agent_id} is elected as leader")
+            await self.notify_others_leader_election_result()
+    
+    async def notify_others_for_election(self):
+        """ Notify other agents that a leader election is taking place. """
+        for agent_info in self.other_agents_info:
+            if agent_info['id'] > self.agent_id:  # Notify only agents with higher IDs
+                try:
+                    print("yay?")
+                    async with websockets.connect(f"ws://{agent_info['address']}:{agent_info['port']}") as websocket:
+                        print("yay")
+                        await websocket.send(json.dumps({'type': 'election', 'id': self.agent_id}))
+                except Exception as e:
+                    print(f"Error in sending election message to agent {agent_info['id']}: {e}")
+
+    async def notify_others_leader_election_result(self):
+        """ Notify other agents about the election result. """
+        for agent_info in self.other_agents_info:
+            try:
+                async with websockets.connect(f"ws://{agent_info['address']}:{agent_info['port']}") as websocket:
+                    print("got here")
+                    await websocket.send(json.dumps({'type': 'new_leader', 'id': self.agent_id}))
+            except Exception as e:
+                print(f"Error in sending new leader message to agent {agent_info['id']}: {e}")
+
+    async def handle_election_messages(self, message):
+        """ Handle incoming messages related to leader election. """
+        if message.get('type') == 'election' and message['id'] > self.agent_id:
+            self.received_higher_priority_message = True
+            print(f"Agent {self.agent_id} received higher priority election message from Agent {message['id']}")
+            
+
+    def start_agent_listener(self):
+        """ Start the WebSocket server for the agent. """
+        # Create a new event loop for the thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Define the WebSocket server for this agent
+        server = websockets.serve(self.handle_agent_messages, self.host, self.port)
+        print(f"Agent listener server running on ws://{self.host}:{self.port}")
 
         loop.run_until_complete(server)
         loop.run_forever()
-
-
+    
+    async def handle_agent_messages(self, websocket, path):
+            """ Handle messages from other agents (like leader election). """
+            async for message in websocket:
+                data = json.loads(message)
+                if data.get('type') == 'election':
+                    await self.handle_election_messages(data)
+                elif data.get('type') == 'new_leader':
+                    if data['id'] != self.agent_id:
+                        self.is_leader = False
+                        print(f"Agent {self.agent_id} acknowledges new leader: Agent {data['id']}")
+                        
     # initiating heartbeat
     #note: have to recall everytime new leader is selected
     def start_heartbeat(self):
@@ -144,20 +226,62 @@ class DataAgent:
                 # note: check for timeout in this case
                 print("bruh something went so wrong idk how to fix it")
 
+
 if __name__ == '__main__':
     # Example usage
     backend_controller_url = 'ws://http://127.0.0.1:8000'
-    agent = DataAgent('localhost', 5000, backend_controller_url, is_leader=True)
-    thread1 = threading.Thread(target=DataAgent.start_backend_controller_listener, args=(agent,))
-    thread2 = threading.Thread(target=DataAgent.start_producer_listener, args=(agent,))
-    thread3 = threading.Thread(target=asyncio.run, args=(agent.start(),))
 
-    # Start the threads
+    #for testing
+    agents_info = [
+    {
+        'id': 1,  # Unique identifier for the first agent
+        'address': '127.0.0.1',  # Localhost address
+        'port': 5001  # Port number for the first agent
+    },
+    {
+        'id': 2,  # Unique identifier for the second agent
+        'address': '127.0.0.1',  # Localhost address
+        'port': 5002  # Port number for the second agent
+    }
+]
+
+    agent1 = DataAgent('localhost', 5001, backend_controller_url, 1, agents_info, is_leader=True)
+    agent2 = DataAgent('localhost', 5002, backend_controller_url, 2, agents_info, is_leader=False)
+
+    # Start WebSocket servers for each agent
+    thread1 = threading.Thread(target=agent1.start_agent_listener)
+    thread2 = threading.Thread(target=agent2.start_agent_listener)
     thread1.start()
     thread2.start()
-    thread3.start()
 
-    # Wait for both threads to finish (they won't)
+    # Wait for WebSocket servers to be fully up and running
+    time.sleep(5)  # Adjust this delay as needed
+
+    # Now start the leader election process
+    print("Starting leader election...")
+    thread3 = threading.Thread(target=asyncio.run, args=(agent1.start_leader_election(),))
+    thread4 = threading.Thread(target=asyncio.run, args=(agent2.start_leader_election(),))
+    thread3.start()
+    thread4.start()
+
+    # Wait for threads
     thread1.join()
     thread2.join()
     thread3.join()
+    thread4.join()
+
+
+    # agent1 = DataAgent('localhost', 5001, backend_controller_url, is_leader=True)
+    # thread1 = threading.Thread(target=start_backend_controller_listener, args=(agent,))
+    # thread2 = threading.Thread(target=start_producer_listener, args=(agent,))
+    # thread3 = threading.Thread(target=asyncio.run, args=(agent.start(),))
+
+    # Start the threads
+    # thread1.start()
+    # thread2.start()
+     # thread3.start()
+
+    # Wait for both threads to finish (they won't)
+    # thread1.join()
+    # thread2.join()
+    # thread3.join()
