@@ -58,6 +58,58 @@ class DataAgent:
         self.subscriptions[topic][partition].append(client_address)
         print(f"Added {client_address} to subscriptions: subscriptions[{topic}][{partition}] = ", self.subscriptions[topic][partition])
 
+    async def listen_to_producer(self, websocket):
+        """ Listen for messages from the BackendController. """
+        async for message in websocket:
+            data = json.loads(message)
+            topic = data.get("Topic")
+            partition = data.pop("Partition")
+            with self.datalock:
+                if topic not in self.data:
+                    self.data[topic] = {}
+                if partition not in self.data[topic]:
+                    self.data[topic][partition] = list()
+                self.data[topic][partition].append(data)
+            print(self.data[topic][partition])
+
+    async def push_data_to_subscribers(self, client_address, message):
+        print("Reached!!! Attempting to send ", message, " to ", client_address)
+        try:
+            async with websockets.connect("ws://" + client_address) as websocket:
+                await websocket.send(json.dumps(message))
+        except Exception as e:
+            print(f"Error in sending data to client {client_address}: {e}")
+
+    # Start the agent and heartbeat in async context
+    def start_backend_controller_listener(agent):
+        host = "127.0.0.1"
+        port = 8000
+
+        # Create a new event loop for the thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        server = websockets.serve(agent.listen_to_backend_controller, host, port)
+        print(f"Backend controller listener server running on ws://{host}:{port}")
+
+        loop.run_until_complete(server)
+        loop.run_forever()
+
+    def start_producer_listener(agent):
+        host = "127.0.0.1"
+        port = 8001
+
+        # Create a new event loop for the thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        server = websockets.serve(agent.listen_to_producer, host, port)
+        print(f"Producer listener server running on ws://{host}:{port}")
+
+        loop.run_until_complete(server)
+        loop.run_forever()
+
+
     # def start_heartbeat(self):
     #     """ Start sending heartbeat messages if the agent is a leader. """
     #     if self.is_leader:
@@ -98,27 +150,6 @@ class DataAgent:
     #     for url in followers:
     #         async with websockets.connect(url) as websocket:
     #             await websocket.send(json.dumps(message))
-    async def listen_to_producer(self, websocket):
-        """ Listen for messages from the BackendController. """
-        async for message in websocket:
-            data = json.loads(message)
-            topic = data.get("Topic")
-            partition = data.pop("Partition")
-            with self.datalock:
-                if topic not in self.data:
-                    self.data[topic] = {}
-                if partition not in self.data[topic]:
-                    self.data[topic][partition] = list()
-                self.data[topic][partition].append(data)
-            print(self.data[topic][partition])
-
-    async def push_data_to_subscribers(self, client_address, message):
-        print("Reached!!! Attempting to send ", message, " to ", client_address)
-        try:
-            async with websockets.connect("ws://" + client_address) as websocket:
-                await websocket.send(json.dumps(message))
-        except Exception as e:
-            print(f"Error in sending data to client {client_address}: {e}")
 
 
     # async def start_leader_election(self):
@@ -164,36 +195,6 @@ class DataAgent:
     #         self.received_higher_priority_message = True
     #     elif message.get('type') == 'new_leader':
     #         self.is_leader = False  # A new leader has been elected
-
-# Start the agent and heartbeat in async context
-def start_backend_controller_listener(agent):
-    host = "127.0.0.1"
-    port = 8000
-
-    # Create a new event loop for the thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    server = websockets.serve(agent.listen_to_backend_controller, host, port)
-    print(f"Backend controller listener server running on ws://{host}:{port}")
-
-    loop.run_until_complete(server)
-    loop.run_forever()
-
-def start_producer_listener(agent):
-    host = "127.0.0.1"
-    port = 8001
-
-    # Create a new event loop for the thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    server = websockets.serve(agent.listen_to_producer, host, port)
-    print(f"Producer listener server running on ws://{host}:{port}")
-
-    loop.run_until_complete(server)
-    loop.run_forever()
-
 
 if __name__ == '__main__':
     # Example usage
