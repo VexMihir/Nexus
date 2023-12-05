@@ -113,9 +113,11 @@ class BackendController:
         response = {"message": "Subscription successful. Agents will now send information about subscribed topics."}
         response_json = json.dumps(response)
         await websocket.send(response_json)
+    
     async def handle_get_topics(self, websocket):
         response = {"topics": list(self.topics.keys())}
         await websocket.send(json.dumps(response))
+    
     async def handle_message(self, websocket):
         try:
             request_data = await websocket.recv()
