@@ -226,19 +226,20 @@ if __name__ == '__main__':
     # Example usage
     backend_controller_url = 'ws://http://127.0.0.1:8000'
 
+    # Code to start leader election process must be done manually. The process is done within main in agent.py
     #for testing
     agents_info = [
-    {
-        'id': 1,  # Unique identifier for the first agent
-        'address': '127.0.0.1',  # Localhost address
-        'port': 5001  # Port number for the first agent
-    },
-    {
-        'id': 2,  # Unique identifier for the second agent
-        'address': '127.0.0.1',  # Localhost address
-        'port': 5002  # Port number for the second agent
-    }
-]
+        {
+            'id': 1,  # Unique identifier for the first agent
+            'address': '127.0.0.1',  # Localhost address
+            'port': 5001  # Port number for the first agent
+        },
+        {
+            'id': 2,  # Unique identifier for the second agent
+            'address': '127.0.0.1',  # Localhost address
+            'port': 5002  # Port number for the second agent
+        }
+    ]
 
     agent1 = DataAgent('localhost', 5001, backend_controller_url, 1, agents_info, is_leader=True)
     agent2 = DataAgent('localhost', 5002, backend_controller_url, 2, agents_info, is_leader=False)
