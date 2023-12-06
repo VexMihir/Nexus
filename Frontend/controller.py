@@ -78,7 +78,6 @@ class FrontendController:
     async def add_agent(self, data, websocket):
         agent_id = data['agent_id']
         port = data['port']
-        sent_data = {}
 
         # add agent to agents
         if len(self.leader_agents) == 0: # if no leader agent
@@ -90,8 +89,7 @@ class FrontendController:
             leader = self.round_robin_agent()
             self.round_robin_agents[leader]['nodes'].append(agent_id)
             self.agent_id_to_port[agent_id] = port
-        
-        # need to do a bit more here
+
 
 
     async def remove_agent(self, data, websocket):
@@ -187,7 +185,7 @@ class FrontendController:
             self.initialize_topic(topic)
         else:
             partition = self.round_robin(topic)
-        
+
         # get agent port
         port = self.agents_ports[topic][partition]
         
