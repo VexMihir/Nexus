@@ -247,37 +247,32 @@ if __name__ == '__main__':
     # Start WebSocket servers for each agent
     thread1 = threading.Thread(target=agent1.start_agent_listener)
     thread2 = threading.Thread(target=agent2.start_agent_listener)
+    thread3 = threading.Thread(target=agent2.start_producer_listener)
+    thread4 = threading.Thread(target=agent2.start_backend_controller_listener)
     thread1.start()
     thread2.start()
+    thread3.start()
+    thread4.start()
 
     # Wait for WebSocket servers to be fully up and running
     time.sleep(5)  # Adjust this delay as needed
 
     # Now start the leader election process
-    print("Starting leader election...")
-    thread3 = threading.Thread(target=asyncio.run, args=(agent1.start(),))
-    thread4 = threading.Thread(target=asyncio.run, args=(agent2.start(),))
-    thread3.start()
-    thread4.start()
+    thread5 = threading.Thread(target=asyncio.run, args=(agent1.start(),))
+    thread6 = threading.Thread(target=asyncio.run, args=(agent2.start(),))
+    thread5.start()
+    thread6.start()
 
     # Wait for threads
     thread1.join()
     thread2.join()
     thread3.join()
     thread4.join()
+    thread5.join()
+    thread6.join()
 
+    # Run this to try leader election
 
-    # agent1 = DataAgent('localhost', 5001, backend_controller_url, is_leader=True)
-    # thread1 = threading.Thread(target=start_backend_controller_listener, args=(agent,))
-    # thread2 = threading.Thread(target=start_producer_listener, args=(agent,))
-    # thread3 = threading.Thread(target=asyncio.run, args=(agent.start(),))
-
-    # Start the threads
-    # thread1.start()
-    # thread2.start()
-     # thread3.start()
-
-    # Wait for both threads to finish (they won't)
-    # thread1.join()
-    # thread2.join()
-    # thread3.join()
+    # thread7 = threading.Thread(target=asyncio.run, args = (agent1.start_leader_election(),))
+    # thread7.start()
+    # thread7.join()
