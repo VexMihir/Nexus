@@ -1,7 +1,6 @@
 import asyncio
 import json
 import websockets
-import socket
 
 
 class Partition:
