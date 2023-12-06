@@ -70,9 +70,8 @@ class FrontendController:
         websocket_url = f"ws://{self.host}:{pub_port}"
         print(f"Sending publisher info to publisher: {port}")
         try: 
-            async with websockets.connect(websocket_url) as websocket:
-                await websocket.send(message_json)
-                print(f"Sent publisher info to publisher: {pub_port}")
+            await websocket.send(message_json)
+            print(f"Sent publisher info to publisher: {pub_port}")
         except Exception as e:
             print(f"Error sending publisher info to publisher: {e}")
     
@@ -94,6 +93,7 @@ class FrontendController:
         
         # need to do a bit more here
 
+
     async def remove_agent(self, data, websocket):
         agent_id = data['agent_id']
         port = data['port']
@@ -108,10 +108,10 @@ class FrontendController:
             leader = self.round_robin_agent()
             self.round_robin_agents[leader]['nodes'].remove(agent_id)
             del self.agent_id_to_port[agent_id]
-        
-        # need to do a bit more here
+
     
     async def ping_leaders(self):
+        print("pinging leaders")
         """ Ping the leader agents. """
         for agent_id, port in self.leader_agents.items():
             websocket_url = f"ws://{self.host}:{port}"
@@ -127,14 +127,33 @@ class FrontendController:
                     i += 1
                 except Exception as e:
                     print(f"Error pinging agent: {e}")
+                    i += 1
             if i == 8:
                 return
             else:
                 self.start_leader_election(agent_id, port)
                 # remove agent from agents
-                del self.leader_agents[agent_id]
-                del self.round_robin_agents[agent_id]
-                del self.agent_id_to_port[agent_id]
+                # del self.leader_agents[agent_id]
+                # del self.round_robin_agents[agent_id]
+                # del self.agent_id_to_port[agent_id]
+    
+    async def handle_leader_election_result(self, data, websocket):
+        leader = data['leader']
+
+        self.leader_agents[leader] = self.agent_id_to_port[leader]
+        self.leader_agents[leader] = self.round_robin_agents[leader]
+        # find which previous leader this leader was part of
+        prev_leader = None
+        for agent_id, agent in self.round_robin_agents.items():
+            if leader in agent['nodes']:
+                # remove leader from previous leader's nodes
+                prev_leader = agent_id
+                break
+        self.round_robin_agents[leader] = {'nodes': self.round_robin_agents[leader]['nodes'].remove(leader), 'topics': self.round_robin_agents[leader]['topics']}
+
+        del self.leader_agents[prev_leader]
+        del self.round_robin_agents[prev_leader]
+
     
     async def start_leader_election(self, agent_id):
         """ Start leader election. """
@@ -154,6 +173,7 @@ class FrontendController:
                     i += 1
                 except Exception as e:
                     print(f"Error sending leader election message to follower: {e}")
+                    i += 1
 
     async def handle_publisher_info(self, data, websocket):
         """ Handle publisher info from FrontendAgent. """
@@ -186,24 +206,39 @@ class FrontendController:
 
     async def handle_message(self, websocket):
         """ Handle messages to FrontendAgent. """
+        print("connected to frontend controller")
         try:
             message = await websocket.recv()
             json_message = json.loads(message)
+            
             if isinstance(message, bytes):
                 # If the received message is a ping frame, respond with a pong frame
                 await self.pong(websocket)
-            elif json_message['action'] == 'add_agent':
-                await self.add_agent(json_message, websocket)
-            elif json_message['action'] == 'remove_agent':
-                await self.remove_agent(json_message, websocket)
-            elif json_message['action'] == 'get_agent':
-                await self.handle_publisher_info(json_message, websocket)
+            if 'action' in json_message:
+                if json_message['action'] == 'add_agent':
+                    await self.add_agent(json_message, websocket)
+                elif json_message['action'] == 'remove_agent':
+                    await self.remove_agent(json_message, websocket)
+                elif json_message['action'] == 'get_agent':
+                    await self.handle_publisher_info(json_message, websocket)
+                elif json_message['action'] == 'leader_election':
+                    await self.handle_leader_election_result(json_message, websocket)
+                elif json_message['action'] == 'boop':
+                    await self.send_message(websocket)
             else:
                 print(f"Received message: {json_message}")
             
         except asyncio.TimeoutError:
             # No message received within the timeout, continue with other tasks
             pass
+    async def send_message(self, websocket):
+        """ Send message to FrontendAgent. """
+        message = {
+            "type": "boop"
+        }
+        message = json.dumps(message)
+        await websocket.send(message)
+        print(f"Sent message: {message}")
     
 
 
